@@ -1,0 +1,444 @@
+---
+title: "Predicting House Prices From Real-Estate Data"
+author: "Eric Murphy"
+date: "5/1/2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Table of Contents
+
+### A. Preface - The 4D Data Science Lifecycle Framework
+    1. Define  - What Problem to Solve : KPIs to Impact
+    2. Discover
+        - Goals for Effective Data Exploration
+            - Obtain/Load data
+            - Clean data
+            - Explore data
+            - Establish baseline outcomes
+            - Hypothesize solutions
+    3. Develop
+        - Feature Selection
+        - Create models
+        - Model Testing
+        - Model Selection
+    4. Deploy
+        - Solution
+        - Measure Model Effectiveness on KPIs
+
+### B. Descriptive Statistics, Adequacy Tests, & Feature Selection Methods
+
+    1. Introduction - Define 
+        - Defining our goal - KPIs to Impact
+        - Overview of the Dataset
+        - Motivations for Analysis
+        - Description of Dataset
+           - Descriptive Statistics of Missing & Incomplete Data
+           - Descriptive Statistics for Discrete & Continuous Variables
+           - Identifying Multicollinearity Early (VIF, PCA/PCR)
+        - Questions to Consider
+
+    2. Exploratory Data Analysis - Discover
+        - Visualizing and describing the Response Variable (SalePrice)
+           - Measures of Central Tendency (mean, median, mode, outliers)
+              - Why using a trimmed mean is ideal
+           - Measures of Dispersion (variance, standard deviation, IQR)
+           - Measures of Symmetry (skewness, kurtosis)
+        - Data Cleaning
+           - Checking the data for completeness
+           -  Imputing missing data
+           - Variable Encoding & Factorization
+
+
+
+
+###  C. Modeling & Methodology - Develop
+    1. Data Preprocessing Feature Selection Methods
+        - Filter Methods
+           - Pearson Correlation Matrix
+        - Embedded Methods
+           - LASSO Regression
+           - Ridge Regression
+           - Random Forest
+    2. Comparison Tests
+           - k-fold Cross Validation
+          
+###  D. Final Models - Deploy
+    1. Final Model Summary
+        - Tuning Parameters
+        - Training Error
+        - Prediction Error Estimate
+        - Important Features
+    2. Response Estimate KPIs
+        - Parameter Estimations
+        - Confidence Intervals
+        - Prediction Intervals
+        - p-values
+
+###  E. Discussion of Results
+    1. Conclusions
+        - Final Accuracy
+        - Limitations of analysis
+
+
+
+##Define - Stating the Problem, Goals, and Overview of our Dataset
+
+###Goal: To define our problem to solve
+
+###Problem: What features best explain the price of a house? Can we then use the best features to predict the sale price of any house in Ames, Iowa
+
+###Description:
+The Ames Iowa data set describes the sale of individual residential property in Ames, Iowa from 2006 to 2010. The data set contains 2930 observations and a sizeable number of explanatory variables, of which 23 are categorical variables, 23 are ordered variables, 14 are discretized, and 20 are continuous.
+Upon data cleaning and some imputation of extraneous variables, 80 variables remained that were directly related to the real estate in question that focus on the quality and quantity of many physical attributes of the property.
+
+The 14 discrete variables often quantify the number of items occurring in the house, such as number of kitchens, bedrooms, and full and half-bathrooms, and above ground living areas of the home. The 20 continuous variables pertain to various size dimensions for each observation, usually in square-footage. In addition to the average lot size and total square footage found on most common home listings, other more specific variables are quantified in the data set, such as area measurements on certain rooms such as basements. The primary living area, and even patio space is reduced into individual categories based on quality and type. Remodeling dates are also recorded, which is practical information in house hunting. They range from two to 28 classes with the least described being STREET (gravel or paved) and the often-described being NEIGHBORHOOD. The nominal variables identify various types of dwellings, garages, materials, and environmental conditions while the ordinal variables qualitatively rate various items within the property. 
+
+###Motivation for Analysis:
+Personally, I found interest in this dataset because I am or will soon be actively interested in purchasing a home someday. I found that the analysis would prove to be useful to me as a current student for learning how to think, as well as one day being a data practitioner that navigates the home-buying process. As it would be, most of the variables are the kind of information that the average home buyer would want to know about a potential property, that answer direct and indirect looming questions such as:
+ 1.	When was it built / is it too old to maintain long-term?
+ 2.	How big is the lot / is it too small relative to the price?
+ 3.	How many square feet of living space is in the dwelling / where's that space used most or least? 
+ 4.	How many full & half bathrooms are there / will my housemates have to share one, if we have guests will there be a dedicated guest bathroom?
+ 
+Intuitively, these are useful variables that influence our natural decision-making process. In aggregating information we value highest, we naturally decide if the features justify the price. 
+
+###Questions that deserve answers:
+The genesis for most questions for this project have their roots in human's ability to intuitively derive value from multivariate analysis in day to day life. As such, I primarily explore solutions to four questions:
+1.	Which variables explain most of the variance and fit of the predictions? Do the most important variables naturally make sense?
+2.	In doing our analysis, should we exclude highly suspect outliers? If the data is skewed, should we transform it or leave the distribution as-is? Is there regression towards the mean if we leave outliers in the data?
+3.	Which algorithm predicts best? I will explore Principal Component Regression, and Random Forest methods. Do any methods translate easily to natural intuitive processes?
+4.	Among discovered correlations, which ones are naturally unintuitive? Does this analysis provide scalable insight?
+
+
+```{r, echo=FALSE}
+#Load all necessary libraries into R
+library(knitr) #knit markdown
+library(tidyverse) #General purpose library
+library(gbm) #Boosting Regression
+library(CORElearn) #ML Algorithm Suite
+library(MASS)
+library(tree)
+library(xgboost) #Extreme Gradient Boosting Tree-Based Algorithm
+library(glmnet) #LASSO, RIDGE, and ElasticNet regression
+library(randomForest) #Implements random forest 
+library(corrplot) #Correlation Matrix Graphical declaration library
+library(ggplot2) #Graphics declaration library
+library(readr) #Text parsing
+library(stringr) #String Manipulation
+library(dplyr) #plyr version 2.0
+library(pls) #Multivariate regression methods, PCR
+library(car) #Companion to Applied Regression
+library(caret) #Classification and Regression Training
+library(gridExtra) #Graphics package for miscellaneous graphic features
+library(scales) #Graphical scaling package
+library(Rmisc) #miscellaneous data analysis needs
+library(ggrepel) #For positioning non-overlapping text in graph labeling
+library(psych) #Miscellaneous data analysis tools used primarily in psychometrics
+```
+
+```{r}
+#Read in kaggle data file
+train <- read.csv("C:/users/emurp010/documents/kaggle datasets/House Prices/train.csv", header = TRUE, stringsAsFactors = TRUE)
+test <- read.csv("C:/Users/emurp010/Documents/Kaggle Datasets/House Prices/test.csv", header = TRUE, stringsAsFactors = TRUE)
+```
+
+After loading in relevant libraries and feeding in training and testing data from the starting 2nd row of the data (to make train and test the same size), we find that the training set has 1,460 observations across 81 features.
+```{r}
+#Find dimensions of training data
+dim(train)
+```
+
+Our test data has 1,459 observations spread out over the same features minus the response variable SalePrice, which is expected.
+```{r}
+dim(test)
+```
+# Discovering Insights
+
+Let's plot a histogram of the SalePrice distribution.
+
+Here are all the features we have to work with in the training set. The test set is the same set of features without the last feature, our response variable SalePrice.
+```{r}
+names(train)
+```
+
+
+
+#Data Cleaning Step
+
+#Since the IDs do not contribute anything to model influence, we will omit these from the training and testing data. If we need them again, we can call them from a test_label variable-object created here.
+```{r}
+test_IDs <- test$Id #Create vector list of IDs from test set
+test$Id <- NULL #Remove Ids from test set
+train$Id <- NULL #Remove Ids from training set
+```
+
+We now revisualize the dimensions of the data, and name listing, just to make sure.
+```{r}
+dim(train) #Dataset now has one-less feature, "ID". 80 features remaining, including SalePrice
+```
+
+```{r}
+dim(test) #Same for test set. 79 features remaining, after removing ID
+SalePrice <- train$SalePrice
+```
+
+```{r}
+#full_data <- rbind(train, test)
+```
+
+
+Here are some descriptive statistics about our response variable SalePrice:
+Data is skewed highly positively skewed (Skew >1,  = 1.88)
+Population Mean = $189,921
+Standard Deviation = $79,442.50
+First Quartile/25th %ile = $129,975
+Median/50th %ile = $163,000
+Third Quartile/75th %ile = $214,000
+IQR = Third Quartle - First Quartile = $84,025
+Minimum Sale Price= 34,900 and Highest Sale Price  = $755,000
+Kurtosis = 6.5 (Normal is 3, so this is curve is very steep) which implies that the Mode is very large, which implies that the mean value is observed a lot.
+Outlier Detection (Traditional): Mean + [3 x Stdev] = SalePrice > $428,249 (19)
+
+```{r}
+
+#describe(full_data$SalePrice)
+describe(train$SalePrice)
+#Descriptive statistics for the response variable SalePrice.
+boxplot(train$SalePrice)
+```
+I'm curious to see how large the outliers are, so I list the prices of them.
+```{r}
+boxplot(train$SalePrice, plot = FALSE)$out
+
+```
+I want to remove outliers at least 3 standard deviations beyond the mean or higher, which is any value >=428240.
+Values >= 428249 are in rows 3, 7, 8, 17, 20, 21, 24, 26, 28, 37, 40, 42, 43, 46, 49, 51, 53, 55, 59.
+I remove these values manually.
+```{r}
+# remove rows in r - subset function with multiple conditions
+train <- subset(train, SalePrice < 428249 )
+dim(train) #I decided to keep only only values of the dataset less than the highly suspect outlier threshold. This brings n from 1460 to 1441.
+#This makes sense because 1460 - 1441 = 19 entries removed, the exact amount of highly suspect outliers i determined.
+```
+
+Our summary statistics for the response variable have now changed due to the removal of Highly Suspect Outliers.
+Our new mean is $176363, a decrease of 13,558 dollars or 17% of our old Standard Deviation.
+Our new median is $161750, a neglibible decrease 1,250 dollars or 0.8% of our original Median.
+Our new mean absolute deviation is $54,485.55
+Our new Standard Deviation is  $68,353.35
+Our new skew is 1.04, an EXCELLENT IMPROVEMENT from 1.88
+Our new kurtosis is 1.06, an EXCELLENT IMPROVEMENT from 6.5
+This is starting to resemble a normal distribution!
+
+```{r}
+describe(train$SalePrice)
+```
+To prove it, let's check for normality.
+```{r}
+qqPlot(SalePrice)
+shapiro.test(SalePrice) # Data is still not normal enough
+```
+Let's try removing more outliers, say 2.5 standard deviations about the mean, that would be any value higher than $388,526.00.
+This has decreased our skew and kurtosis considerably, but it is still moderately positively skewed.
+```{r}
+train <- subset(train, SalePrice < 388526)
+describe(train$SalePrice)
+#Our skew has decreased below 1, but I want to get it lower
+```
+
+I'm going to remove one last set of outliers, this time ~1.5 standard deviations about the mean. This means we will keep all data with a SalePrice less than about $300,000. This condition still preserves 92% of our original dataset while making our skew small enough to make the distribution approximately symmetric.
+```{r}
+train <- subset(train, SalePrice < 300000)
+describe(train$SalePrice) #Our skew is finally within an acceptable range of 0 - 0.5 (approximately symmetric) as well as our kurtosis
+```
+
+The values for asymmetry and kurtosis between -2 and +2 are considered acceptable in order to prove a normal univariate distribution (George & Mallery, 2010). George, D., & Mallery, M. (2010). SPSS for Windows Step by Step: A Simple Guide and Reference, 17.0 update (10a ed.)
+Boston: Pearson.
+
+Skewness values between -0.5 and 0.5 are acceptable to assume an approximately symmetrical univariate distribution.
+
+We satisfy both of these criteria, regardless of the Shapiro - Wilk test, so majority rules 2:1.
+
+We can assume with reasonable confidence that the Response variable distribution is approximately normal.
+
+The QQPlot is also much more linear and the boxplot is more even, with only one moderate outlier. I can live with that.
+```{r}
+qqPlot(train$SalePrice) #The qq plot has straightened significantly enough that we can work with the data with better assumptions.
+boxplot(train$SalePrice) # This boxplot is far better in terms of outliers detected. I can live with this.
+```
+
+
+
+
+
+
+As this dataset stands, we can now make normality assumptions due to the removal of skewness and kurtosis from the data.
+Since we have preserved about 92% of the original dataset we still have a sample space large enough to do meaningful inference on.
+
+
+Before we decide which variables are important, let's plot our newly normalized SalePrice distribution
+
+```{r}
+ggplot(data=train[!is.na(train$SalePrice),], aes(x=train$SalePrice)) +
+        geom_histogram(fill="orange", binwidth = 10000) +
+        scale_x_continuous(breaks= seq(0, 400000, by=100000), labels = comma) #Looks much more normal
+```
+
+
+
+Let's figure out how much data is missing.
+```{r}
+na_quantity<-sapply(train,function(y)length(which(is.na(y)==T)))#Identifies all variables with missing values
+na_vars<- data.frame(Item=colnames(train),Count=na_quantity)
+na_vars #Shows all Variables with missing values and how many there are.
+
+#PoolQC has 1339 missing values
+#Fence has 1069 missing values
+#MiscFeature has 1291 missing values
+#Alley has 1254 missing features
+#FireplaceQuality has 686 missing features
+
+#These variables have so many missing values that they are essentially useless, so I decided to discard them entirely.
+```
+I'm gonna simplify things by just dropping the columns with too much missing data. The features I'm dropping are also very weak predictors.
+
+```{r}
+dropVars <- c('PoolQC', 'Fence', 'MiscFeature', 'Alley', 'FireplaceQu')
+
+train <- train[,!(names(train) %in% dropVars)] #Dropping all features with large amounts of data missing.
+
+```
+
+
+
+As we can see here, our top 8 most correlative variables with rho greater than 0.5 are listed in the first column of the correlation matrix.
+
+All correlations are positive correlations, regardless of strength
+
+1. Quality is the most Correlative variable.
+followed by:
+2. Above ground living are
+3. Garage car capacity
+4. Number of full baths
+5. Size of garage
+6. Year built
+7. Year Remodeled (if applicable)
+8. Size of basement
+
+However we do run into an issue with multicollinearity among features. This means we have to perform a Principal Component Analysis. We will kill two birds with one stone by performing a Principal Component Regression.
+```{r}
+
+SalePrice <- train$SalePrice
+#How many of the variables are quantitative?
+quantvars <- which(sapply(train, is.numeric)) #index vector numeric variables
+quantvarnames <- names(quantvars) #saving names vector for use later on
+factorvars <- which(sapply(train, is.factor)) #index vector factor variables
+cat('We have', length(quantvars), 'numeric variables', 'and', length(factorvars), 'categorical variables') #String concatenation
+
+all_quantvars <- train[,quantvars] #define all quantitative variables as an object
+quantvar_corr <- cor(all_quantvars, use="pairwise.complete.obs") #correlations of all numeric variables
+
+decreasing_corr <- as.matrix(sort(quantvar_corr[,'SalePrice'], decreasing = TRUE))
+
+high_corr <- names(which(apply(decreasing_corr, 1, function(x) abs(x)>0.5))) #lists only variables with correlations above 0.5, good positive correlations
+quantvar_corr <- quantvar_corr[high_corr, high_corr] #creates correlation matrix symmetrically with 
+
+corrplot.mixed(quantvar_corr, tl.col="black", tl.pos = "lt")
+```
+
+Here I visualize all variables that have missing values and how many.
+```{r}
+NAcol <- which(colSums(is.na(train)) > 0)
+sort(colSums(sapply(train[NAcol], is.na)), decreasing = TRUE)
+
+all_quantvars[is.na(all_quantvars)] <- 0
+
+
+```
+
+
+
+
+Since so few people can afford expensive houses, it makes sense to cater our model to the average buyer, by removing the skew of expensive outliers. This not only makes our response variable approximately normal and symmetrical, but we can know invoke some basic assumptions about the data, given that our variance is known, mainly that our data now abides by the central limit theorem stated below:
+
+"if a population has
+finite variance sigma squared and a finite mean mu, then the distribution of sample means (from an infinite set
+of independent samples of N independent observations each) approaches a normal distribution
+(with variance ??2/N and mean ??) as the sample size increases, regardless of the shape of
+population distribution."
+
+
+Next we apply a regression tree where OverallQuality, Ground Living Area, Neighborhood, Basement Size and GarageArea were the top variables used in prediction
+```{r, fig.width=15, fig.height=10}
+dim(train)
+set.seed(1)
+tree.train=tree(train$SalePrice~. , data=train)
+summary(tree.train) #
+#plot(tree.train)
+#text(tree.train,pretty=0)
+```
+```{r}
+#train=randomForest(SalePrice~.,data=train,subset=train,mtry=17,ntree=25)
+#yhat.bag = predict(bag.train,newdata=train[-train,])
+#mean((yhat.bag - test)^2)
+#varImpPlot(bag.train)
+```
+
+```{r}
+set.seed(1)
+boost.train <- gbm(SalePrice~., train,distribution="gaussian",n.trees=1000,interaction.depth=2,shrinkage=0.1,verbose=F)
+yhat.boost = predict(boost.train, data=test , n.trees = 1000)
+mean((yhat.boost - test)^2)
+summary(yhat.boost)
+```
+```{r}
+dim(train)
+```
+
+
+
+```{r}
+set.seed(615726)
+train <- rfImpute(train, SalePrice)
+RandForest <- randomForest(x=train[1:1345,-76], y=SalePrice[1:1345], ntree=100,importance=TRUE)
+imp_RF <- importance(RandForest)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:20,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE for random permutation of each variable') + coord_flip() + theme(legend.position="none")
+
+train.rf <- randomForest(SalePrice ~ ., data=train)
+rf.predict <- predict(train.rf, data=train)
+```
+
+
+This is enough data cleaning for me, since the most important variables are the most measured, we don't have to impute every single feature because most features that have weak importance aren't measured consistently across the dataset.
+
+
+
+The basic idea behind PCR is to calculate the principal components and then use some of these components as predictors in a linear regression model fitted using the typical least squares procedure.
+
+
+From Dr. Nguyen's notes:
+
+"First we implement a LASSO and RIDGE Regression Model
+The `glmnet()` function has an `alpha` argument that determines what type
+of model is fit. If `alpha=0` then a ridge regression model is fit, and if `alpha=1`
+then a lasso model is fit. We first fit a ridge regression model.
+However, here we have chosen to implement
+the function over a grid of values ranging from $\lambda = 10^10$ to $\lambda = 10^{???2}$, essentially covering the full range of scenarios from the null model containing
+only the intercept, to the least squares fit."
+
+
+
+
+
+
+
